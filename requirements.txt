@@ -1,0 +1,12 @@
+# 必須ライブラリ
+scikit-image
+scikit-learn
+pandas
+opencv-python
+
+# PSD生成用
+pytoshop
+
+# 以下のライブラリは簡略化版では不要になりました
+# segment_anything  # SAMセグメンテーション用 - 削除
+# onnx              # SAMモデル用 - 削除
