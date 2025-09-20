@@ -245,13 +245,31 @@ def create_region_layers(base_image_cv, color_regions):
     layers = []
     names = []
     
+    # base_image_cvが確実にBGRA形式であることを確認
+    if base_image_cv.shape[2] == 3:
+        # アルファチャンネルを追加
+        alpha = np.ones((base_image_cv.shape[0], base_image_cv.shape[1], 1), dtype=np.uint8) * 255
+        base_image_cv = np.concatenate([base_image_cv, alpha], axis=2)
+    
     for color, mask in color_regions.items():
         # マスクを適用してレイヤーを作成
-        layer = np.zeros_like(base_image_cv)
+        # 完全に透明な背景から開始
+        layer = np.zeros_like(base_image_cv, dtype=np.uint8)
         
-        # ベクトル化処理で高速化
+        # マスクを確実にuint8に変換
+        mask = np.clip(mask, 0, 255).astype(np.uint8)
+        
+        # マスクがある部分だけベース画像をコピー
         mask_bool = mask > 0
-        layer[mask_bool] = base_image_cv[mask_bool]
+        
+        # BGRチャンネルをコピー
+        layer[:, :, :3][mask_bool] = base_image_cv[:, :, :3][mask_bool]
+        
+        # アルファチャンネルをマスクから設定
+        layer[:, :, 3] = mask
+        
+        # データの整合性チェック
+        layer = np.clip(layer, 0, 255).astype(np.uint8)
         
         layers.append(layer)
         names.append(f"Color_R{color[0]}_G{color[1]}_B{color[2]}")
