@@ -65,14 +65,26 @@ def rgba_to_binary(image):
 
 
 def find_contours(binary_image):
-    """バイナリ画像から輪郭を検出する"""
+    """バイナリ画像から輪郭を検出する（Split Areaと同じ実装）"""
+    # PIL ImageをNumPy配列に変換
     binary_array = np.array(binary_image, dtype=np.uint8)
     
-    # グレースケールに変換してからラベリング
+    # グレースケールに変換
     if len(binary_array.shape) == 3:
-        binary_array = np.mean(binary_array, axis=2).astype(np.uint8)
+        # RGBの平均値でグレースケール化
+        gray = np.mean(binary_array, axis=2).astype(np.uint8)
+    else:
+        gray = binary_array
     
-    labeled_array, num_features = label(binary_array)
+    # 白黒反転（線画が黒、背景が白の場合）
+    # 線画（黒）部分を0、白い部分を1として扱う
+    binary_mask = gray > 128
+    
+    # 連結成分のラベリング
+    labeled_array, num_features = label(binary_mask)
+    
+    print(f"[FillAreaSimple] Detected {num_features} regions")
+    
     return labeled_array, num_features
 
 
@@ -93,7 +105,10 @@ def get_most_frequent_color(image_array, mask):
 def fill_areas_simple(image, labeled_array, num_features):
     """各領域を最頻出色で塗りつぶす（統合処理なし）"""
     image_array = np.array(image)
-    result_array = image_array.copy()
+    result_array = np.zeros_like(image_array)  # 新しい配列を作成
+    
+    # デバッグ: 各領域の情報を出力
+    print(f"Total regions detected: {num_features}")
     
     # 各ラベル領域を単一色で塗りつぶし
     for label_id in range(1, num_features + 1):
@@ -101,8 +116,15 @@ def fill_areas_simple(image, labeled_array, num_features):
         if np.any(mask):
             # その領域の最頻出色を取得
             most_frequent_color = get_most_frequent_color(image_array, mask)
+            print(f"Region {label_id}: color = {most_frequent_color}, pixels = {np.sum(mask)}")
             # 領域を単一色で塗りつぶし
             result_array[mask] = most_frequent_color
+    
+    # 背景（label=0）も処理
+    background_mask = labeled_array == 0
+    if np.any(background_mask):
+        background_color = get_most_frequent_color(image_array, background_mask)
+        result_array[background_mask] = background_color
     
     return Image.fromarray(result_array)
 
