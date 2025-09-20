@@ -126,51 +126,64 @@ def extract_color_regions_optimized(base_image_cv, tolerance=10, use_kmeans=True
         colors = np.array([g['color'] for g in color_groups])
         weights = np.array([g['count'] for g in color_groups])
         
+        print(f"  Colors shape: {colors.shape}, Weights shape: {weights.shape}")
+        
         # クラスタ数を決定
         n_clusters = min(len(colors), max_colors)
+        print(f"  Target clusters: {n_clusters}")
         
         if n_clusters < len(colors):
-            # 重み付きKMeansクラスタリング
-            # 各色を重み回数分複製するのではなく、sample_weightを使用
-            kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=3, max_iter=100)
-            
-            # 重みを考慮したクラスタリング
-            cluster_labels = kmeans.fit_predict(colors, sample_weight=weights)
-            
-            # クラスタ中心を計算（重み付き平均）
-            cluster_centers = []
-            for cluster_id in range(n_clusters):
-                cluster_mask = cluster_labels == cluster_id
-                if np.any(cluster_mask):
-                    cluster_colors = colors[cluster_mask]
-                    cluster_weights = weights[cluster_mask]
-                    # 重み付き平均でクラスタ中心を計算
-                    weighted_center = np.average(cluster_colors, axis=0, weights=cluster_weights)
-                    cluster_centers.append(weighted_center.astype(int))
-            
-            # 元の色インデックスをクラスタラベルにマップ
-            color_to_cluster = {}
-            for i, group in enumerate(color_groups):
-                color_to_cluster[group['index']] = cluster_labels[i]
-            
-            # クラスタごとのマスクを作成
-            color_regions = {}
-            for cluster_id, center_color in enumerate(cluster_centers):
-                # このクラスタに属する全ピクセルのマスクを作成
-                cluster_mask = np.zeros((height, width), dtype=np.uint8)
+            try:
+                # 重み付きKMeansクラスタリング
+                print(f"  Starting KMeans clustering...")
+                kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=3, max_iter=100)
                 
-                # inverse_indicesを使用して効率的にマスクを作成
-                for color_idx, group in enumerate(color_groups):
-                    if cluster_labels[color_idx] == cluster_id:
-                        # この色グループに属するピクセルを取得
-                        group_pixel_mask = (inverse_indices == group['index'])
-                        # フルサイズのマスクに変換
-                        full_mask = np.zeros(len(valid_flat), dtype=bool)
-                        full_mask[valid_flat] = group_pixel_mask
-                        cluster_mask += full_mask.reshape(height, width).astype(np.uint8) * 255
+                # 重みを考慮したクラスタリング
+                cluster_labels = kmeans.fit_predict(colors, sample_weight=weights)
+                print(f"  KMeans completed. Cluster labels shape: {cluster_labels.shape}")
                 
-                if np.any(cluster_mask):
-                    color_regions[tuple(center_color)] = cluster_mask
+                # クラスタ中心を計算（重み付き平均）
+                cluster_centers = []
+                for cluster_id in range(n_clusters):
+                    cluster_mask = cluster_labels == cluster_id
+                    if np.any(cluster_mask):
+                        cluster_colors = colors[cluster_mask]
+                        cluster_weights = weights[cluster_mask]
+                        # 重み付き平均でクラスタ中心を計算
+                        weighted_center = np.average(cluster_colors, axis=0, weights=cluster_weights)
+                        cluster_centers.append(weighted_center.astype(int))
+                
+                print(f"  Created {len(cluster_centers)} cluster centers")
+                
+                # クラスタごとのマスクを作成
+                color_regions = {}
+                for cluster_id, center_color in enumerate(cluster_centers):
+                    # このクラスタに属する全ピクセルのマスクを作成
+                    cluster_mask = np.zeros((height, width), dtype=np.uint8)
+                    
+                    # inverse_indicesを使用して効率的にマスクを作成
+                    for color_idx, group in enumerate(color_groups):
+                        if cluster_labels[color_idx] == cluster_id:
+                            # この色グループに属するピクセルを取得
+                            group_pixel_mask = (inverse_indices == group['index'])
+                            # フルサイズのマスクに変換
+                            full_mask = np.zeros(len(valid_flat), dtype=bool)
+                            full_mask[valid_flat] = group_pixel_mask
+                            cluster_mask += full_mask.reshape(height, width).astype(np.uint8) * 255
+                    
+                    if np.any(cluster_mask):
+                        color_regions[tuple(center_color)] = cluster_mask
+                
+                print(f"  Created {len(color_regions)} color regions from clusters")
+                
+            except Exception as e:
+                print(f"  ERROR in KMeans clustering: {str(e)}")
+                import traceback
+                traceback.print_exc()
+                # フォールバック：クラスタリングなしで処理
+                color_regions = create_masks_from_groups(
+                    rgb_image, valid_mask, unique_colors, inverse_indices, height, width
+                )
         else:
             # クラスタリング不要（色数が既に少ない）
             color_regions = create_masks_from_groups(
@@ -475,85 +488,103 @@ class RGBLineArtDividerOptimized:
     def execute(self, line_art, base_color, color_tolerance, line_blend_mode, 
                 merge_small_regions, min_region_size, use_kmeans, max_colors):
         
-        # 画像をNumPy配列に変換
-        line_art_np = line_art.cpu().detach().numpy().__mul__(255.).astype(np.uint8)[0]
-        base_color_np = base_color.cpu().detach().numpy().__mul__(255.).astype(np.uint8)[0]
+        try:
+            print("[RGBLineArtDividerOptimized] Starting execution...")
+            
+            # 画像をNumPy配列に変換
+            print("[RGBLineArtDividerOptimized] Converting tensors to numpy arrays...")
+            line_art_np = line_art.cpu().detach().numpy().__mul__(255.).astype(np.uint8)[0]
+            base_color_np = base_color.cpu().detach().numpy().__mul__(255.).astype(np.uint8)[0]
+            print(f"[RGBLineArtDividerOptimized] Image shape: {base_color_np.shape}")
+            
+            # PIL Imageに変換
+            print("[RGBLineArtDividerOptimized] Converting to PIL images...")
+            line_art_pil = Image.fromarray(line_art_np)
+            base_color_pil = Image.fromarray(base_color_np)
+            
+            # OpenCV形式（BGRA）に変換
+            print("[RGBLineArtDividerOptimized] Converting to OpenCV format...")
+            line_art_cv = pil2cv(line_art_pil)
+            base_color_cv = pil2cv(base_color_pil)
+            
+            # BGRAに変換（アルファチャンネルを追加）
+            if line_art_cv.shape[2] == 3:
+                line_art_cv = cv2.cvtColor(line_art_cv, cv2.COLOR_BGR2BGRA)
+            if base_color_cv.shape[2] == 3:
+                base_color_cv = cv2.cvtColor(base_color_cv, cv2.COLOR_BGR2BGRA)
+            
+            # 色領域を抽出（最適化版を使用）
+            print(f"[RGBLineArtDividerOptimized] Extracting color regions (KMeans: {use_kmeans})...")
+            color_regions = extract_color_regions_optimized(
+                base_color_cv, 
+                tolerance=color_tolerance,
+                use_kmeans=use_kmeans,
+                max_colors=max_colors
+            )
+            print(f"[RGBLineArtDividerOptimized] Found {len(color_regions)} color regions")
+            
+            # 小さい領域をマージ（最適化版）
+            if merge_small_regions:
+                print("[RGBLineArtDividerOptimized] Merging small regions...")
+                color_regions = merge_small_regions_optimized(color_regions, min_region_size)
+                print(f"[RGBLineArtDividerOptimized] After merging: {len(color_regions)} regions")
+            
+            # レイヤーを作成
+            print("[RGBLineArtDividerOptimized] Creating layers...")
+            color_layers, layer_names = create_region_layers(base_color_cv, color_regions)
+            
+            # BlendModeの設定
+            blend_mode_map = {
+                "multiply": enums.BlendMode.multiply,
+                "normal": enums.BlendMode.normal,
+                "darken": enums.BlendMode.darken,
+                "overlay": enums.BlendMode.overlay
+            }
+            
+            # PSDファイルを保存
+            print("[RGBLineArtDividerOptimized] Saving PSD file...")
+            filename = save_psd_with_nested_layers(
+                base_color_cv,
+                line_art_cv,
+                color_layers,
+                layer_names,
+                output_dir,
+                blend_mode_map[line_blend_mode],
+                "rgb_divided_optimized"
+            )
+            
+            print(f"[RGBLineArtDividerOptimized] PSD file saved: {filename}")
+            print(f"[RGBLineArtDividerOptimized] Created {len(color_regions)} color region layers")
+            
+            # コンポジット画像を作成（プレビュー用）
+            print("[RGBLineArtDividerOptimized] Creating composite image...")
+            composite = base_color_cv.copy()
+            if line_blend_mode == "multiply":
+                # 乗算合成（ベクトル化）
+                line_rgb = line_art_cv[:, :, :3].astype(np.float32) / 255.0
+                composite_rgb = composite[:, :, :3].astype(np.float32) / 255.0
+                composite[:, :, :3] = (composite_rgb * line_rgb * 255).astype(np.uint8)
+            elif line_blend_mode == "normal":
+                # アルファブレンディング（ベクトル化）
+                if line_art_cv.shape[2] == 4:
+                    alpha = line_art_cv[:, :, 3:4].astype(np.float32) / 255.0
+                    composite[:, :, :3] = (
+                        line_art_cv[:, :, :3] * alpha + 
+                        composite[:, :, :3] * (1 - alpha)
+                    ).astype(np.uint8)
+            
+            print("[RGBLineArtDividerOptimized] Execution completed successfully!")
+            
+            # 出力
+            return (
+                to_comfy_img(composite),
+                to_comfy_img(base_color_cv),
+                len(color_regions),
+                filename
+            )
         
-        # PIL Imageに変換
-        line_art_pil = Image.fromarray(line_art_np)
-        base_color_pil = Image.fromarray(base_color_np)
-        
-        # OpenCV形式（BGRA）に変換
-        line_art_cv = pil2cv(line_art_pil)
-        base_color_cv = pil2cv(base_color_pil)
-        
-        # BGRAに変換（アルファチャンネルを追加）
-        if line_art_cv.shape[2] == 3:
-            line_art_cv = cv2.cvtColor(line_art_cv, cv2.COLOR_BGR2BGRA)
-        if base_color_cv.shape[2] == 3:
-            base_color_cv = cv2.cvtColor(base_color_cv, cv2.COLOR_BGR2BGRA)
-        
-        # 色領域を抽出（最適化版を使用）
-        print(f"Extracting color regions (KMeans: {use_kmeans})...")
-        color_regions = extract_color_regions_optimized(
-            base_color_cv, 
-            tolerance=color_tolerance,
-            use_kmeans=use_kmeans,
-            max_colors=max_colors
-        )
-        print(f"Found {len(color_regions)} color regions")
-        
-        # 小さい領域をマージ（最適化版）
-        if merge_small_regions:
-            print("Merging small regions...")
-            color_regions = merge_small_regions_optimized(color_regions, min_region_size)
-            print(f"After merging: {len(color_regions)} regions")
-        
-        # レイヤーを作成
-        color_layers, layer_names = create_region_layers(base_color_cv, color_regions)
-        
-        # BlendModeの設定
-        blend_mode_map = {
-            "multiply": enums.BlendMode.multiply,
-            "normal": enums.BlendMode.normal,
-            "darken": enums.BlendMode.darken,
-            "overlay": enums.BlendMode.overlay
-        }
-        
-        # PSDファイルを保存
-        filename = save_psd_with_nested_layers(
-            base_color_cv,
-            line_art_cv,
-            color_layers,
-            layer_names,
-            output_dir,
-            blend_mode_map[line_blend_mode],
-            "rgb_divided_optimized"
-        )
-        
-        print(f"PSD file saved: {filename}")
-        print(f"Created {len(color_regions)} color region layers")
-        
-        # コンポジット画像を作成（プレビュー用）
-        composite = base_color_cv.copy()
-        if line_blend_mode == "multiply":
-            # 乗算合成（ベクトル化）
-            line_rgb = line_art_cv[:, :, :3].astype(np.float32) / 255.0
-            composite_rgb = composite[:, :, :3].astype(np.float32) / 255.0
-            composite[:, :, :3] = (composite_rgb * line_rgb * 255).astype(np.uint8)
-        elif line_blend_mode == "normal":
-            # アルファブレンディング（ベクトル化）
-            if line_art_cv.shape[2] == 4:
-                alpha = line_art_cv[:, :, 3:4].astype(np.float32) / 255.0
-                composite[:, :, :3] = (
-                    line_art_cv[:, :, :3] * alpha + 
-                    composite[:, :, :3] * (1 - alpha)
-                ).astype(np.uint8)
-        
-        # 出力
-        return (
-            to_comfy_img(composite),
-            to_comfy_img(base_color_cv),
-            len(color_regions),
-            filename
-        )
+        except Exception as e:
+            print(f"[RGBLineArtDividerOptimized] ERROR: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            raise
