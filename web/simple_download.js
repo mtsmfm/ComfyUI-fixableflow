@@ -1,6 +1,6 @@
 /**
  * RGBLineArtDividerFast Web Extension
- * Log file based download system
+ * Always fetch latest from log file - no caching
  */
 
 import { app } from "../../scripts/app.js";
@@ -13,31 +13,22 @@ app.registerExtension({
         if (node.comfyClass === "RGBLineArtDividerFast") {
             console.log("[RGBDivider] Setting up download button");
             
-            // Store the latest generated filename
-            let latestPsdFilename = null;
-            let checkInterval = null;
-            
             // Add download button
             const downloadButton = node.addWidget(
                 "button",
                 "Download PSD",
-                "⬇ Download PSD (Run workflow first)",
+                "⬇ Download PSD",
                 async () => {
-                    // First check if we have a cached filename
-                    if (latestPsdFilename) {
-                        downloadPsd(latestPsdFilename);
-                        return;
-                    }
+                    console.log("[RGBDivider] Download button clicked");
                     
-                    // Try to read the log file
+                    // Always fetch the latest filename from log file
                     try {
                         const logFilename = await fetchLatestPsdFromLog();
                         if (logFilename) {
-                            latestPsdFilename = logFilename;
-                            updateButton(logFilename);
+                            console.log("[RGBDivider] Found file in log:", logFilename);
                             downloadPsd(logFilename);
                         } else {
-                            // Manual fallback
+                            console.log("[RGBDivider] No file found in log, prompting user");
                             promptForManualInput();
                         }
                     } catch (error) {
@@ -47,10 +38,10 @@ app.registerExtension({
                 }
             );
             
-            // Function to fetch latest PSD filename from log
+            // Function to fetch latest PSD filename from log (always gets fresh data)
             async function fetchLatestPsdFromLog() {
                 try {
-                    // Try to fetch the log file
+                    // Always fetch with cache-busting timestamp
                     const response = await fetch('/view?filename=fixableflow_savepath.log&type=output&t=' + Date.now());
                     
                     if (response.ok) {
@@ -58,9 +49,13 @@ app.registerExtension({
                         const filename = text.trim();
                         
                         if (filename && filename.includes('.psd')) {
-                            console.log("[RGBDivider] Found filename in log:", filename);
+                            console.log("[RGBDivider] Log file contains:", filename);
                             return filename;
+                        } else {
+                            console.log("[RGBDivider] Log file exists but no valid PSD filename found");
                         }
+                    } else {
+                        console.log("[RGBDivider] Log file not found (404)");
                     }
                 } catch (error) {
                     console.error("[RGBDivider] Failed to read log file:", error);
@@ -70,7 +65,7 @@ app.registerExtension({
             
             // Function to download PSD
             function downloadPsd(filename) {
-                console.log("[RGBDivider] Downloading:", filename);
+                console.log("[RGBDivider] Starting download for:", filename);
                 
                 // Ensure we have just the filename, not the full path
                 const cleanFilename = filename.split('/').pop() || filename.split('\\').pop() || filename;
@@ -86,90 +81,61 @@ app.registerExtension({
                 link.click();
                 document.body.removeChild(link);
                 
-                console.log("[RGBDivider] Download initiated");
+                console.log("[RGBDivider] Download initiated successfully");
             }
             
             // Function for manual input
             function promptForManualInput() {
                 const filename = prompt(
                     "ログファイルが見つかりません。\n" +
-                    "サーバーコンソールからファイル名をコピーしてください。\n" +
+                    "ワークフローを実行するか、手動でファイル名を入力してください。\n" +
                     "例: output_rgb_fast_normal_G3HTgU8UPn.psd"
                 );
                 
                 if (filename && filename.includes('.psd')) {
                     const cleanFilename = filename.split('/').pop() || filename.split('\\').pop() || filename;
-                    latestPsdFilename = cleanFilename;
-                    updateButton(cleanFilename);
+                    console.log("[RGBDivider] Manual input:", cleanFilename);
                     downloadPsd(cleanFilename);
                 }
             }
             
-            // Helper function to update button
-            function updateButton(filename) {
-                const cleanFilename = filename.split('/').pop() || filename.split('\\').pop() || filename;
-                downloadButton.name = `⬇ Download: ${cleanFilename}`;
-                downloadButton.color = "#4CAF50";
-                downloadButton.bgcolor = "#2E7D32";
-                console.log("[RGBDivider] Button updated:", cleanFilename);
+            // Function to check and update button status
+            async function updateButtonStatus() {
+                const filename = await fetchLatestPsdFromLog();
+                if (filename) {
+                    const cleanFilename = filename.split('/').pop() || filename.split('\\').pop() || filename;
+                    downloadButton.name = `⬇ Download: ${cleanFilename}`;
+                    downloadButton.color = "#4CAF50";
+                    downloadButton.bgcolor = "#2E7D32";
+                } else {
+                    downloadButton.name = "⬇ Download PSD (Run workflow first)";
+                    downloadButton.color = "#888888";
+                    downloadButton.bgcolor = "#333333";
+                }
             }
             
             // Initial button style
             downloadButton.color = "#888888";
             downloadButton.bgcolor = "#333333";
             
-            // Start periodic check for log file updates
-            function startLogMonitoring() {
-                if (checkInterval) {
-                    clearInterval(checkInterval);
-                }
-                
-                // Check log file every 2 seconds after workflow execution
-                checkInterval = setInterval(async () => {
-                    const filename = await fetchLatestPsdFromLog();
-                    if (filename && filename !== latestPsdFilename) {
-                        console.log("[RGBDivider] New PSD detected:", filename);
-                        latestPsdFilename = filename;
-                        updateButton(filename);
-                        
-                        // Stop checking once we found a file
-                        clearInterval(checkInterval);
-                        checkInterval = null;
-                    }
-                }, 2000);
-                
-                // Stop checking after 10 seconds to avoid unnecessary requests
-                setTimeout(() => {
-                    if (checkInterval) {
-                        clearInterval(checkInterval);
-                        checkInterval = null;
-                        console.log("[RGBDivider] Stopped log monitoring");
-                    }
-                }, 10000);
-            }
-            
-            // Monitor node execution to trigger log checking
+            // Monitor node execution to update button appearance
             const originalOnExecuted = node.onExecuted;
             node.onExecuted = function(output) {
-                console.log("[RGBDivider] Node executed");
+                console.log("[RGBDivider] Node executed, updating button status...");
                 
                 if (originalOnExecuted) {
                     originalOnExecuted.apply(this, arguments);
                 }
                 
-                // Start monitoring log file after execution
-                console.log("[RGBDivider] Starting log file monitoring...");
-                startLogMonitoring();
+                // Wait a bit for the log file to be written, then update button
+                setTimeout(async () => {
+                    await updateButtonStatus();
+                }, 2000);
             };
             
-            // Also check log immediately on button creation in case file already exists
+            // Check for existing log file on load
             (async () => {
-                const filename = await fetchLatestPsdFromLog();
-                if (filename) {
-                    latestPsdFilename = filename;
-                    updateButton(filename);
-                    console.log("[RGBDivider] Found existing PSD:", filename);
-                }
+                await updateButtonStatus();
             })();
             
             console.log("[RGBDivider] Download button ready");
@@ -184,9 +150,9 @@ window.checkPsdLog = async function() {
         if (response.ok) {
             const text = await response.text();
             console.log("Log file content:", text);
-            return text;
+            return text.trim();
         } else {
-            console.log("Log file not found or not accessible");
+            console.log("Log file not found (404)");
         }
     } catch (error) {
         console.error("Error reading log:", error);
@@ -194,4 +160,24 @@ window.checkPsdLog = async function() {
     return null;
 };
 
-console.log("[RGBLineArtDividerFast] Extension loaded - log file mode");
+// Global function to manually trigger download
+window.downloadLatestPsd = async function() {
+    const filename = await window.checkPsdLog();
+    if (filename && filename.includes('.psd')) {
+        const cleanFilename = filename.split('/').pop() || filename.split('\\').pop() || filename;
+        const downloadUrl = `/view?filename=${encodeURIComponent(cleanFilename)}&type=output`;
+        
+        const link = document.createElement('a');
+        link.href = downloadUrl;
+        link.download = cleanFilename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        
+        console.log("Downloaded:", cleanFilename);
+    } else {
+        console.log("No PSD file found in log");
+    }
+};
+
+console.log("[RGBLineArtDividerFast] Extension loaded - always fetch latest mode");
