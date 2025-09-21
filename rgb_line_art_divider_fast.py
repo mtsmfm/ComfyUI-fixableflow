@@ -75,12 +75,13 @@ def add_psd(psd, img, name, mode):
     
     img = np.clip(img, 0, 255).astype(np.uint8)
     
-    # BGRAからRGBAに変換（OpenCVのBGR順をRGB順に）
+    # OpenCVのBGRA形式からpytoshop用のRGBA形式に変換
+    # imgは既にBGRA形式（OpenCV形式）なので、RGBAに変換
     img_rgba = np.zeros_like(img, dtype=np.uint8)
-    img_rgba[:, :, 0] = img[:, :, 2]  # B -> R (赤チャンネル)
-    img_rgba[:, :, 1] = img[:, :, 1]  # G -> G (緑チャンネル)
-    img_rgba[:, :, 2] = img[:, :, 0]  # R -> B (青チャンネル)
-    img_rgba[:, :, 3] = img[:, :, 3]  # A -> A (アルファチャンネル)
+    img_rgba[:, :, 0] = img[:, :, 2]  # B -> R
+    img_rgba[:, :, 1] = img[:, :, 1]  # G -> G
+    img_rgba[:, :, 2] = img[:, :, 0]  # R -> B
+    img_rgba[:, :, 3] = img[:, :, 3]  # A -> A
     
     # ld_utils.pyと同じ形式でチャンネルデータを作成
     layer_1 = layers.ChannelImageData(image=img_rgba[:, :, 3], compression=1)
