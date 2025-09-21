@@ -410,21 +410,34 @@ def save_psd_with_nested_layers(base_image_cv, line_art_cv, color_layers, layer_
     # デバッグ: 各レイヤーのチャンネルデータを確認
     for i, layer in enumerate(layers_list):
         print(f"[DEBUG] Layer {i} ({layer.name}):")
-        if hasattr(layer, 'channels') and layer.channels:
-            for j, channel in enumerate(layer.channels):
-                if isinstance(channel, np.ndarray):
-                    print(f"  Channel {j}: shape={channel.shape}, dtype={channel.dtype}, "
-                          f"min={np.min(channel)}, max={np.max(channel)}")
-                    # 負の値をチェック
-                    if np.any(channel < 0):
-                        print(f"  WARNING: Channel {j} contains negative values!")
-                        negative_indices = np.where(channel < 0)
-                        print(f"  Negative values at indices: {negative_indices}")
-                    # NaNやInfをチェック
-                    if np.any(np.isnan(channel)) or np.any(np.isinf(channel)):
-                        print(f"  WARNING: Channel {j} contains NaN or Inf values!")
+        print(f"  layer type: {type(layer)}")
+        print(f"  hasattr channels: {hasattr(layer, 'channels')}")
+        if hasattr(layer, 'channels'):
+            print(f"  channels type: {type(layer.channels)}")
+            if layer.channels:
+                if isinstance(layer.channels, dict):
+                    print("  channels is dict")
+                    for key, value in layer.channels.items():
+                        if isinstance(value, np.ndarray):
+                            print(f"    Channel {key}: shape={value.shape}, dtype={value.dtype}, "
+                                  f"min={np.min(value)}, max={np.max(value)}")
+                        else:
+                            print(f"    Channel {key}: type={type(value)}")
+                elif isinstance(layer.channels, (list, tuple)):
+                    print(f"  channels is list/tuple with {len(layer.channels)} items")
+                    for j, channel in enumerate(layer.channels):
+                        if isinstance(channel, np.ndarray):
+                            print(f"    Channel {j}: shape={channel.shape}, dtype={channel.dtype}, "
+                                  f"min={np.min(channel)}, max={np.max(channel)}")
+                        else:
+                            print(f"    Channel {j}: type={type(channel)}")
                 else:
-                    print(f"  Channel {j}: type={type(channel)}")
+                    print(f"  Unexpected channels format")
+                    # enumerate経由でアクセスしてみる
+                    print("  Trying enumerate:")
+                    for idx, ch in enumerate(layer.channels):
+                        print(f"    Index {idx}: type={type(ch)}")
+                        break  # 最初の一つだけ確認
     
     try:
         # PSDファイル作成時にデプス（ビット深度）を明示的に8ビットに設定
