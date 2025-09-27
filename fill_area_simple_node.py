@@ -63,6 +63,9 @@ def fill_areas_simple(image, labeled_array, num_features):
     image_array = np.array(image)
     result_array = np.zeros_like(image_array)  # 新しい配列を作成
     
+    # クラスタ色情報を保存する辞書
+    cluster_colors = {}
+    
     # デバッグ: 各領域の情報を出力
     print(f"Total regions detected: {num_features}")
     
@@ -75,14 +78,17 @@ def fill_areas_simple(image, labeled_array, num_features):
             print(f"Region {label_id}: color = {most_frequent_color}, pixels = {np.sum(mask)}")
             # 領域を単一色で塗りつぶし
             result_array[mask] = most_frequent_color
+            # クラスタ色を保存
+            cluster_colors[label_id] = most_frequent_color
     
     # 背景（label=0）も処理
     background_mask = labeled_array == 0
     if np.any(background_mask):
         background_color = get_most_frequent_color(image_array, background_mask)
         result_array[background_mask] = background_color
+        cluster_colors[0] = background_color
     
-    return Image.fromarray(result_array)
+    return Image.fromarray(result_array), cluster_colors
 
 
 def process_fill_area_with_mask(region_mask, fill_image):
@@ -112,9 +118,9 @@ def process_fill_area_with_mask(region_mask, fill_image):
         fill_image = fill_image.resize((mask_shape[1], mask_shape[0]), Image.Resampling.LANCZOS)
     
     # 各領域を最頻出色で塗りつぶし（統合処理なし）
-    result_image = fill_areas_simple(fill_image, labeled_array, num_features)
+    result_image, cluster_colors = fill_areas_simple(fill_image, labeled_array, num_features)
     
-    return result_image, num_features
+    return result_image, num_features, cluster_colors, labeled_array
 
 
 class FillAreaSimpleNode:
@@ -135,8 +141,8 @@ class FillAreaSimpleNode:
             }
         }
     
-    RETURN_TYPES = ("IMAGE", "IMAGE", "INT")
-    RETURN_NAMES = ("filled_image", "preview", "region_count")
+    RETURN_TYPES = ("IMAGE", "IMAGE", "INT", "CLUSTER_INFO")
+    RETURN_NAMES = ("filled_image", "preview", "region_count", "cluster_info")
     
     FUNCTION = "execute"
     
@@ -172,7 +178,7 @@ class FillAreaSimpleNode:
             mask_np = mask_np[:, :, 0]  # チャンネル次元を削除
         
         # region_maskを使用して処理
-        result_image, num_features = process_fill_area_with_mask(
+        result_image, num_features, cluster_colors, labeled_array = process_fill_area_with_mask(
             mask_np,
             fill_pil.convert("RGB")
         )
@@ -184,7 +190,14 @@ class FillAreaSimpleNode:
         output_tensor = pil_to_tensor(result_image)
         preview_tensor = pil_to_tensor(preview)
         
-        return (output_tensor, preview_tensor, num_features)
+        # クラスタ情報を辞書として返す
+        cluster_info = {
+            'colors': cluster_colors,
+            'labeled_array': labeled_array,
+            'num_regions': num_features
+        }
+        
+        return (output_tensor, preview_tensor, num_features, cluster_info)
 
 
 class FillAreaSimpleVisualizeNode:
@@ -252,7 +265,7 @@ class FillAreaSimpleVisualizeNode:
         region_mask_tensor = region_mask
         
         # 塗りつぶし処理
-        result_image = fill_areas_simple(fill_rgb, labeled_array, num_features)
+        result_image, cluster_colors = fill_areas_simple(fill_rgb, labeled_array, num_features)
         
         # 可視化の作成
         if visualization_mode == "regions":
