@@ -11,7 +11,6 @@ from skimage import color as skcolor
 import folder_paths
 import os
 from tqdm import tqdm
-import comfy.utils
 
 comfy_path = os.path.dirname(folder_paths.__file__)
 layer_divider_path = f'{comfy_path}/custom_nodes/ComfyUI-fixableflow'
@@ -359,14 +358,6 @@ class FillSpaceV2Node:
         flat_pil = tensor_to_pil(flat_image)
         original_pil = tensor_to_pil(original_image)
         
-        # ComfyUIのプログレスバーを作成
-        pbar = comfy.utils.ProgressBar(100)
-        
-        # プログレスバーコールバック関数
-        def update_progress(current, total, text="Processing..."):
-            progress = int((current / total) * 100)
-            pbar.update_absolute(progress, 100, text)
-        
         # 処理方法を選択
         if use_batch_processing:
             # バッチ処理（高速だがメモリ使用量が多い）
@@ -379,17 +370,14 @@ class FillSpaceV2Node:
             )
         else:
             # 通常処理（プログレスバー付き）
-            print("[FillSpaceV2] Using standard processing mode with progress bar")
+            print("[FillSpaceV2] Using standard processing mode")
             filled_image = process_fill_space_with_clusters_progress(
                 binary_pil, 
                 original_pil,
                 cluster_info,
                 invert_binary,
-                update_progress
+                None  # プログレスバーコールバックは一時的に無効化
             )
-        
-        # プログレスバーを完了状態に
-        pbar.update_absolute(100, 100, "Processing complete!")
         
         # プレビュー画像の作成（前後比較）
         preview = create_before_after_preview(original_pil, filled_image)
