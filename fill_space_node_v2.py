@@ -1,7 +1,7 @@
 """
 Fill Space Node V2 for ComfyUI
 線画の下のピクセルを、クラスタ化された色から最も近い色で塗りつぶすノード
-CIEDE2000色差計算を使用
+CIEDE2000色差計算を使用（プログレスバー付き）
 """
 
 import torch
@@ -10,6 +10,8 @@ from PIL import Image, ImageOps
 from skimage import color as skcolor
 import folder_paths
 import os
+from tqdm import tqdm
+import comfy.utils
 
 comfy_path = os.path.dirname(folder_paths.__file__)
 layer_divider_path = f'{comfy_path}/custom_nodes/ComfyUI-fixableflow'
@@ -96,9 +98,126 @@ def find_closest_cluster_color(pixel_color, cluster_colors):
     return closest_color
 
 
-def process_fill_space_with_clusters(binary_image, original_image, cluster_info, invert_binary=True):
+def process_fill_space_with_clusters_progress(binary_image, original_image, cluster_info, 
+                                             invert_binary=True, progress_callback=None):
     """
-    線画の下のピクセルをクラスタ色で塗りつぶす
+    線画の下のピクセルをクラスタ色で塗りつぶす（プログレスバー対応版）
+    
+    Args:
+        binary_image: バイナリ画像（線画）
+        original_image: 元の塗り画像（3枚目の入力）
+        cluster_info: Fill Area Simpleからのクラスタ情報
+        invert_binary: バイナリ画像を反転するか
+        progress_callback: プログレスバーのコールバック関数
+    
+    Returns:
+        処理済みの画像
+    """
+    # バイナリ画像をグレースケールに変換
+    if binary_image.mode != 'L':
+        binary_gray = binary_image.convert('L')
+    else:
+        binary_gray = binary_image
+    
+    # 必要に応じてバイナリ画像を反転
+    if invert_binary:
+        binary_gray = ImageOps.invert(binary_gray)
+    
+    binary_array = np.array(binary_gray)
+    original_array = np.array(original_image.convert('RGB'))
+    
+    # クラスタ色情報を取得
+    cluster_colors = cluster_info.get('colors', {})
+    
+    # 出力画像を初期化（元画像のコピー）
+    output_array = original_array.copy()
+    
+    # 白ピクセル（線画の下）の座標を取得
+    white_pixels = np.argwhere(binary_array == 255)
+    total_pixels = len(white_pixels)
+    
+    print(f"[FillSpaceV2] Processing {total_pixels} pixels under line art")
+    print(f"[FillSpaceV2] Using {len(cluster_colors)} color clusters")
+    
+    # クラスタ色をLAB色空間に事前変換（キャッシュ）
+    cluster_labs = {}
+    for cluster_id, cluster_color in cluster_colors.items():
+        cluster_labs[cluster_id] = rgb_to_lab(cluster_color)
+    
+    # 処理済み色のキャッシュ（同じ色の再計算を避ける）
+    color_cache = {}
+    
+    # バッチ処理のサイズ
+    batch_size = 1000
+    
+    # 各白ピクセルに対して処理
+    for batch_start in range(0, total_pixels, batch_size):
+        batch_end = min(batch_start + batch_size, total_pixels)
+        batch_pixels = white_pixels[batch_start:batch_end]
+        
+        for y, x in batch_pixels:
+            # 元画像のピクセル色を取得
+            original_color = tuple(original_array[y, x])
+            
+            # キャッシュをチェック
+            if original_color in color_cache:
+                closest_color = color_cache[original_color]
+            else:
+                # 最も近いクラスタ色を見つける（最適化版）
+                closest_color = find_closest_cluster_color_optimized(
+                    original_color, cluster_colors, cluster_labs
+                )
+                # キャッシュに保存
+                color_cache[original_color] = closest_color
+            
+            # ピクセルを最も近いクラスタ色で塗りつぶす
+            output_array[y, x] = closest_color
+        
+        # プログレスバーを更新
+        if progress_callback:
+            progress = batch_end / total_pixels
+            progress_callback(batch_end, total_pixels, f"Processing pixels: {batch_end}/{total_pixels}")
+    
+    print(f"[FillSpaceV2] Completed processing. Cache hit rate: {len(color_cache)}/{total_pixels} unique colors")
+    
+    return Image.fromarray(output_array.astype(np.uint8))
+
+
+def find_closest_cluster_color_optimized(pixel_color, cluster_colors, cluster_labs):
+    """
+    最適化版：事前計算されたLAB値を使用してピクセルの色に最も近いクラスタ色を見つける
+    
+    Args:
+        pixel_color: RGB形式のピクセル色 (R, G, B)
+        cluster_colors: クラスタID -> RGB色の辞書
+        cluster_labs: クラスタID -> LAB色の辞書（事前計算済み）
+    
+    Returns:
+        最も近いクラスタのRGB色
+    """
+    if not cluster_colors:
+        return pixel_color
+    
+    # ピクセル色をLAB色空間に変換
+    pixel_lab = rgb_to_lab(pixel_color)
+    
+    min_distance = float('inf')
+    closest_color = pixel_color
+    
+    # 各クラスタ色との距離を計算
+    for cluster_id, cluster_lab in cluster_labs.items():
+        distance = ciede2000_distance(pixel_lab, cluster_lab)
+        
+        if distance < min_distance:
+            min_distance = distance
+            closest_color = cluster_colors[cluster_id]
+    
+    return closest_color
+
+
+def process_fill_space_batch_optimized(binary_image, original_image, cluster_info, invert_binary=True):
+    """
+    バッチ処理最適化版：NumPyベクトル化を使用した高速処理
     
     Args:
         binary_image: バイナリ画像（線画）
@@ -125,25 +244,59 @@ def process_fill_space_with_clusters(binary_image, original_image, cluster_info,
     # クラスタ色情報を取得
     cluster_colors = cluster_info.get('colors', {})
     
-    # 出力画像を初期化（元画像のコピー）
+    if not cluster_colors:
+        return original_image
+    
+    # 出力画像を初期化
     output_array = original_array.copy()
     
-    # 白ピクセル（線画の下）の座標を取得
-    white_pixels = np.argwhere(binary_array == 255)
+    # 白ピクセルのマスクを取得
+    white_mask = binary_array == 255
     
-    print(f"[FillSpaceV2] Processing {len(white_pixels)} pixels under line art")
+    print(f"[FillSpaceV2] Batch processing {np.sum(white_mask)} pixels")
     print(f"[FillSpaceV2] Using {len(cluster_colors)} color clusters")
     
-    # 各白ピクセルに対して処理
-    for y, x in white_pixels:
-        # 元画像のピクセル色を取得
-        original_color = tuple(original_array[y, x])
-        
-        # 最も近いクラスタ色を見つける
-        closest_color = find_closest_cluster_color(original_color, cluster_colors)
-        
-        # ピクセルを最も近いクラスタ色で塗りつぶす
-        output_array[y, x] = closest_color
+    # クラスタ色を配列に変換
+    cluster_ids = list(cluster_colors.keys())
+    cluster_rgb_array = np.array([cluster_colors[cid] for cid in cluster_ids])
+    
+    # クラスタ色をLAB色空間に変換（一括変換）
+    cluster_lab_array = skcolor.rgb2lab(cluster_rgb_array.reshape(-1, 1, 3) / 255.0).reshape(-1, 3)
+    
+    # 白ピクセルの色を取得
+    white_pixel_colors = original_array[white_mask]
+    unique_colors, inverse_indices = np.unique(white_pixel_colors, axis=0, return_inverse=True)
+    
+    print(f"[FillSpaceV2] Found {len(unique_colors)} unique colors to process")
+    
+    # 各ユニーク色に対して最も近いクラスタを見つける
+    closest_cluster_indices = np.zeros(len(unique_colors), dtype=np.int32)
+    
+    # プログレスバーを使用
+    with tqdm(total=len(unique_colors), desc="Finding closest clusters") as pbar:
+        for i, color in enumerate(unique_colors):
+            # RGB to LAB
+            color_lab = skcolor.rgb2lab(color.reshape(1, 1, 3) / 255.0).reshape(3)
+            
+            # 全クラスタとの距離を計算
+            distances = np.array([
+                skcolor.deltaE_ciede2000(
+                    color_lab.reshape(1, 1, 3),
+                    cluster_lab.reshape(1, 1, 3)
+                )[0, 0]
+                for cluster_lab in cluster_lab_array
+            ])
+            
+            # 最小距離のクラスタを選択
+            closest_cluster_indices[i] = np.argmin(distances)
+            pbar.update(1)
+    
+    # 結果を適用
+    closest_colors = cluster_rgb_array[closest_cluster_indices]
+    result_colors = closest_colors[inverse_indices]
+    
+    # 出力配列に結果を設定
+    output_array[white_mask] = result_colors
     
     return Image.fromarray(output_array.astype(np.uint8))
 
@@ -151,7 +304,7 @@ def process_fill_space_with_clusters(binary_image, original_image, cluster_info,
 class FillSpaceV2Node:
     """
     線画の下のピクセルをクラスタ色で塗りつぶすノード
-    CIEDE2000色差を使用して最も近いクラスタ色を選択
+    CIEDE2000色差を使用して最も近いクラスタ色を選択（プログレスバー付き）
     """
     
     def __init__(self):
@@ -169,6 +322,10 @@ class FillSpaceV2Node:
                     "default": True,
                     "display_label": "Invert Binary Image"
                 }),
+                "use_batch_processing": ("BOOLEAN", {
+                    "default": False,
+                    "display_label": "Use Batch Processing (Faster)"
+                }),
             }
         }
     
@@ -179,7 +336,8 @@ class FillSpaceV2Node:
     
     CATEGORY = "LayerDivider"
     
-    def execute(self, binary_image, flat_image, original_image, cluster_info, invert_binary=True):
+    def execute(self, binary_image, flat_image, original_image, cluster_info, 
+                invert_binary=True, use_batch_processing=False):
         """
         線画の下のピクセルをクラスタ色で塗りつぶす処理
         
@@ -189,6 +347,7 @@ class FillSpaceV2Node:
             original_image: 元の塗り画像のテンソル
             cluster_info: クラスタ情報の辞書
             invert_binary: バイナリ画像を反転するか
+            use_batch_processing: バッチ処理を使用するか
         
         Returns:
             filled_image: 処理済みの画像
@@ -200,13 +359,37 @@ class FillSpaceV2Node:
         flat_pil = tensor_to_pil(flat_image)
         original_pil = tensor_to_pil(original_image)
         
-        # 線画の下のピクセルを処理
-        filled_image = process_fill_space_with_clusters(
-            binary_pil, 
-            original_pil,
-            cluster_info,
-            invert_binary
-        )
+        # ComfyUIのプログレスバーを作成
+        pbar = comfy.utils.ProgressBar(100)
+        
+        # プログレスバーコールバック関数
+        def update_progress(current, total, text="Processing..."):
+            progress = int((current / total) * 100)
+            pbar.update_absolute(progress, 100, text)
+        
+        # 処理方法を選択
+        if use_batch_processing:
+            # バッチ処理（高速だがメモリ使用量が多い）
+            print("[FillSpaceV2] Using batch processing mode")
+            filled_image = process_fill_space_batch_optimized(
+                binary_pil, 
+                original_pil,
+                cluster_info,
+                invert_binary
+            )
+        else:
+            # 通常処理（プログレスバー付き）
+            print("[FillSpaceV2] Using standard processing mode with progress bar")
+            filled_image = process_fill_space_with_clusters_progress(
+                binary_pil, 
+                original_pil,
+                cluster_info,
+                invert_binary,
+                update_progress
+            )
+        
+        # プログレスバーを完了状態に
+        pbar.update_absolute(100, 100, "Processing complete!")
         
         # プレビュー画像の作成（前後比較）
         preview = create_before_after_preview(original_pil, filled_image)
