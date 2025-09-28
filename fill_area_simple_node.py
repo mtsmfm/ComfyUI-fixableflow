@@ -60,6 +60,96 @@ def get_most_frequent_color(image_array, mask):
         return tuple(unique_colors[most_frequent_idx])
 
 
+def merge_similar_regions_by_color_distance(image, labeled_array, num_features, distance_threshold=10):
+    """
+    CIEDE2000色距離を使用して類似した色の領域を統合
+    
+    Args:
+        image: PIL Image
+        labeled_array: ラベル配列
+        num_features: 現在の領域数
+        distance_threshold: CIEDE2000距離の閾値（デフォルト10）
+    
+    Returns:
+        新しいラベル配列, 新しい領域数
+    """
+    image_array = np.array(image)
+    
+    # 各領域の代表色（最頻出色）とピクセル数を取得
+    region_info = []
+    
+    for label_id in range(1, num_features + 1):
+        mask = labeled_array == label_id
+        if np.any(mask):
+            # 領域の最頻出色を取得
+            most_frequent_color = get_most_frequent_color(image_array, mask)
+            # LAB色空間に変換
+            lab_color = skcolor.rgb2lab(np.array(most_frequent_color).reshape(1, 1, 3) / 255.0)[0, 0]
+            pixel_count = np.sum(mask)
+            region_info.append({
+                'id': label_id,
+                'color': most_frequent_color,
+                'lab': lab_color,
+                'pixel_count': pixel_count,
+                'merged': False
+            })
+    
+    if len(region_info) == 0:
+        return labeled_array, 0
+    
+    # ピクセル数で降順ソート
+    region_info.sort(key=lambda x: x['pixel_count'], reverse=True)
+    
+    # マージグループを作成
+    merge_groups = []
+    processed_regions = set()
+    
+    for main_region in region_info:
+        if main_region['id'] in processed_regions:
+            continue
+        
+        # 新しいグループを開始
+        current_group = [main_region['id']]
+        processed_regions.add(main_region['id'])
+        
+        # 他の領域と比較
+        for other_region in region_info:
+            if other_region['id'] in processed_regions:
+                continue
+            
+            # CIEDE2000距離を計算
+            delta_e = skcolor.deltaE_ciede2000(
+                main_region['lab'].reshape(1, 1, 3),
+                other_region['lab'].reshape(1, 1, 3)
+            )[0, 0]
+            
+            if delta_e <= distance_threshold:
+                current_group.append(other_region['id'])
+                processed_regions.add(other_region['id'])
+        
+        merge_groups.append(current_group)
+    
+    print(f"[FillAreaSimple] Created {len(merge_groups)} merged groups from {num_features} regions")
+    print(f"[FillAreaSimple] Color distance threshold: {distance_threshold}")
+    
+    # 新しいラベル配列を作成
+    new_labeled_array = np.zeros_like(labeled_array)
+    
+    # 各グループに新しいラベルを割り当て
+    for new_label, group in enumerate(merge_groups, 1):
+        for old_label in group:
+            mask = labeled_array == old_label
+            new_labeled_array[mask] = new_label
+    
+    # 背景はそのまま
+    background_mask = labeled_array == 0
+    new_labeled_array[background_mask] = 0
+    
+    new_num_features = len(merge_groups)
+    
+    return new_labeled_array, new_num_features
+
+
 def merge_similar_regions(image, labeled_array, num_features, target_clusters):
     """
     類似した色の領域を統合してクラスタ数を削減
@@ -149,14 +239,16 @@ def fill_areas_simple(image, labeled_array, num_features):
     return Image.fromarray(result_array), cluster_colors
 
 
-def process_fill_area_with_mask(region_mask, fill_image, max_clusters=50):
+def process_fill_area_with_mask(region_mask, fill_image, use_color_distance=True, distance_threshold=10, max_clusters=50):
     """
-    region_maskを使用した塗り領域均一化処理（クラスタ数制限付き）
+    region_maskを使用した塗り領域均一化処理
     
     Args:
         region_mask: SplitAreaNodeからのラベル付き領域マスク（numpy array）
         fill_image: 塗り画像（PIL Image）
-        max_clusters: 最大クラスタ数（デフォルト50）
+        use_color_distance: CIEDE2000色距離でクラスタリングするか
+        distance_threshold: CIEDE2000距離の閾値（use_color_distance=Trueの時のみ使用）
+        max_clusters: 最大クラスタ数（use_color_distance=Falseの時のみ使用）
     
     Returns:
         処理済みの画像, 領域数, クラスタ色情報, ラベル配列
@@ -176,11 +268,20 @@ def process_fill_area_with_mask(region_mask, fill_image, max_clusters=50):
     if fill_image.size != (mask_shape[1], mask_shape[0]):
         fill_image = fill_image.resize((mask_shape[1], mask_shape[0]), Image.Resampling.LANCZOS)
     
-    # 領域数が多すぎる場合は色でクラスタリングして統合
-    if num_features > max_clusters:
-        print(f"[FillAreaSimple] Too many regions ({num_features}). Merging to {max_clusters} clusters...")
-        labeled_array, num_features = merge_similar_regions(fill_image, labeled_array, num_features, max_clusters)
+    # クラスタリング方法の選択
+    if use_color_distance:
+        # CIEDE2000色距離ベースのクラスタリング
+        print(f"[FillAreaSimple] Using CIEDE2000 color distance clustering (threshold={distance_threshold})")
+        labeled_array, num_features = merge_similar_regions_by_color_distance(
+            fill_image, labeled_array, num_features, distance_threshold
+        )
         print(f"[FillAreaSimple] Merged to {num_features} regions")
+    else:
+        # K-meansクラスタリング（従来の方法）
+        if num_features > max_clusters:
+            print(f"[FillAreaSimple] Too many regions ({num_features}). Merging to {max_clusters} clusters using K-means...")
+            labeled_array, num_features = merge_similar_regions(fill_image, labeled_array, num_features, max_clusters)
+            print(f"[FillAreaSimple] Merged to {num_features} regions")
     
     # 各領域を最頻出色で塗りつぶし
     result_image, cluster_colors = fill_areas_simple(fill_image, labeled_array, num_features)
@@ -203,13 +304,25 @@ class FillAreaSimpleNode:
             "required": {
                 "fill_image": ("IMAGE",),
                 "region_mask": ("MASK",),  # SplitAreaNodeからの入力
+                "use_color_distance": ("BOOLEAN", {
+                    "default": True,
+                    "display_label": "Use CIEDE2000 Color Distance"
+                }),
+                "distance_threshold": ("FLOAT", {
+                    "default": 10.0,
+                    "min": 1.0,
+                    "max": 50.0,
+                    "step": 1.0,
+                    "display": "slider",
+                    "display_label": "Color Distance Threshold"
+                }),
                 "max_clusters": ("INT", {
                     "default": 30,
                     "min": 5,
                     "max": 100,
                     "step": 5,
                     "display": "slider",
-                    "display_label": "Max Color Clusters"
+                    "display_label": "Max Clusters (K-means)"
                 }),
             }
         }
@@ -221,13 +334,16 @@ class FillAreaSimpleNode:
     
     CATEGORY = "LayerDivider"
     
-    def execute(self, fill_image, region_mask, max_clusters=30, **kwargs):
+    def execute(self, fill_image, region_mask, use_color_distance=True, distance_threshold=10, max_clusters=30, **kwargs):
         """
         シンプルな塗り領域均一化処理を実行
         
         Args:
             fill_image: 塗り画像のテンソル
             region_mask: SplitAreaNodeからの領域マスク
+            use_color_distance: CIEDE2000色距離でクラスタリングするか
+            distance_threshold: CIEDE2000距離の閾値
+            max_clusters: 最大クラスタ数（K-means用）
             **kwargs: 互換性のための追加引数（無視される）
         
         Returns:
@@ -254,6 +370,8 @@ class FillAreaSimpleNode:
         result_image, num_features, cluster_colors, labeled_array = process_fill_area_with_mask(
             mask_np,
             fill_pil.convert("RGB"),
+            use_color_distance,
+            distance_threshold,
             max_clusters
         )
         
