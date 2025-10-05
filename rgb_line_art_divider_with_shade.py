@@ -437,7 +437,7 @@ class RGBLineArtDividerWithShade:
     RETURN_NAMES = ("composite", "base_color", "region_count", "psd_filename")
     FUNCTION = "execute"
     CATEGORY = "LayerDivider"
-    OUTPUT_NODE = False
+    OUTPUT_NODE = True  # Trueに変更してダウンロードボタンを有効化
 
     def execute(self, line_art, base_color, shade, color_tolerance, 
                 luminance_threshold, line_blend_mode, max_colors):
