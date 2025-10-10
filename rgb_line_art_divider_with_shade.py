@@ -287,11 +287,10 @@ def create_shade_layers(base_image_cv, shade_image_cv, color_regions, luminance_
     for color_rgb, mask in color_regions.items():
         # この領域のレイヤーを初期化
         base_layer = np.zeros_like(base_image_cv, dtype=np.uint8)
-        light_layer = np.zeros_like(base_image_cv, dtype=np.uint8)  # shade_image_cvではなくbase_image_cvのサイズで統一
+        light_layer = np.zeros_like(base_image_cv, dtype=np.uint8)
         shade_layer = np.zeros_like(base_image_cv, dtype=np.uint8)
         
-        # 各レイヤーのアルファマスクを初期化（実際に書き込まれたピクセルのみを記録）
-        base_alpha_mask = np.zeros((base_image_cv.shape[0], base_image_cv.shape[1]), dtype=np.uint8)
+        # light/shadeレイヤーのアルファマスクを初期化（実際に書き込まれたピクセルのみを記録）
         light_alpha_mask = np.zeros((base_image_cv.shape[0], base_image_cv.shape[1]), dtype=np.uint8)
         shade_alpha_mask = np.zeros((base_image_cv.shape[0], base_image_cv.shape[1]), dtype=np.uint8)
         
@@ -303,7 +302,11 @@ def create_shade_layers(base_image_cv, shade_image_cv, color_regions, luminance_
         base_rgb = cv2.cvtColor(base_image_cv[:, :, :3], cv2.COLOR_BGR2RGB)
         shade_rgb = cv2.cvtColor(shade_image_cv[:, :, :3], cv2.COLOR_BGR2RGB)
         
-        # マスク内の各ピクセルを処理
+        # baseレイヤーは領域全体をbase_colorで塗りつぶす（土台なのでアルファなし）
+        # マスク領域全体にbase_colorを適用
+        base_layer[mask_bool] = base_image_cv[mask_bool]
+        
+        # マスク内の各ピクセルを処理してlight/shadeを分類
         y_indices, x_indices = np.where(mask_bool)
         
         for y, x in zip(y_indices, x_indices):
@@ -321,13 +324,11 @@ def create_shade_layers(base_image_cv, shade_image_cv, color_regions, luminance_
                 # shadeレイヤーに追加（shade画像から）
                 shade_layer[y, x] = shade_image_cv[y, x]
                 shade_alpha_mask[y, x] = 255  # このピクセルはshadeレイヤーに存在
-            else:
-                # baseレイヤーに追加（base_color画像から）
-                base_layer[y, x] = base_image_cv[y, x]
-                base_alpha_mask[y, x] = 255  # このピクセルはbaseレイヤーに存在
+            # baseに分類される場合は何もしない（既に全体が塗りつぶされている）
         
-        # 各レイヤーに実際に書き込まれた部分のみアルファチャンネルを設定
-        base_layer[:, :, 3] = base_alpha_mask
+        # baseレイヤーは領域全体のマスクをアルファに設定（土台として機能）
+        base_layer[:, :, 3] = mask
+        # light/shadeレイヤーは実際に書き込まれた部分のみアルファを設定
         light_layer[:, :, 3] = light_alpha_mask
         shade_layer[:, :, 3] = shade_alpha_mask
         
