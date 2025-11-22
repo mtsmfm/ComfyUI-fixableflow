@@ -205,7 +205,7 @@ def merge_similar_regions_by_color_distance(image, labeled_array, num_features, 
             )[0, 0]
 
             if delta_e <= distance_threshold:
-                current_group.append(other_region['id']]
+                current_group.append(other_region['id'])
                 processed_regions.add(other_region['id'])
 
         merge_groups.append(current_group)
