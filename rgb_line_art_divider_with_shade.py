@@ -1,7 +1,8 @@
 """
-RGB Line Art Layer Divider with Shade - Fixed VERSION
+RGB Line Art Layer Divider with Shade - Reconstruct Shade VERSION
 shade画像を追加入力として受け取り、各領域ごとにbase/light/shadeレイヤーを生成する拡張版
-画像サイズ自動調整とLayerFlagsエラー修正済み
+・base_layer は base_color のベタ塗り
+・light / shade layer を上に重ねることで、最終的に shade 入力画像を再現する
 """
 
 from PIL import Image
@@ -115,19 +116,20 @@ def classify_pixels_by_luminance(base_pixel_rgb, shade_pixel_rgb, luminance_thre
     """
     ベース色とシェード色のLab空間での輝度(L)を比較して分類
     
-    Args:
-        base_pixel_rgb: ベース色のRGB値 (0-255)
-        shade_pixel_rgb: シェード色のRGB値 (0-255)
-        luminance_threshold: 輝度差の閾値
-    
-    Returns:
-        'light' or 'shade' or 'base'
+    「shade入力を再現する」ための方針:
+      - RGBが完全一致している場合のみ 'base'
+      - それ以外は必ず 'light' か 'shade' のどちらかに振る
+        → そのレイヤーに shade の色をそのまま入れ、alpha=255 にすることで
+           合成結果が常に shade 入力と一致する
     """
-    # RGB to LAB変換（単一ピクセル用）
+    # 完全一致しているピクセルのみ base とみなす
+    if np.array_equal(base_pixel_rgb, shade_pixel_rgb):
+        return 'base'
+    
+    # それ以外はLABのL値の差の符号で light / shade を決定
     base_lab = rgb_to_lab(np.array([[base_pixel_rgb]], dtype=np.uint8))[0, 0]
     shade_lab = rgb_to_lab(np.array([[shade_pixel_rgb]], dtype=np.uint8))[0, 0]
     
-    # L値（輝度）の差を計算
     l_diff = shade_lab[0] - base_lab[0]
     
     if l_diff > luminance_threshold:
@@ -135,7 +137,8 @@ def classify_pixels_by_luminance(base_pixel_rgb, shade_pixel_rgb, luminance_thre
     elif l_diff < -luminance_threshold:
         return 'shade'
     else:
-        return 'base'
+        # 閾値内の中間は符号だけで振り分け（= どちらか一方に必ず乗せる）
+        return 'light' if l_diff >= 0 else 'shade'
 
 def extract_color_regions_fast(base_image_cv, tolerance=10, max_colors=50):
     """
@@ -258,9 +261,15 @@ def create_shade_layers(base_image_cv, shade_image_cv, color_regions, luminance_
     """
     各色領域ごとにbase/light/shadeレイヤーを作成
     画像サイズを自動調整
-    
-    Returns:
-        region_layers: {color: {'base': layer, 'light': layer, 'shade': layer}}の辞書
+
+    方針:
+      - base_layer は base_color でベタ塗り（領域マスクでアルファ）
+      - light/shade_layer には shade 画像の色をそのまま入れる
+      - 1ピクセルにつき、base / light / shade のうち
+        ・RGB完全一致 → base のみ可視
+        ・それ以外  → light または shade のみ可視
+        になるように alpha を制御する
+      → base + light + shade (すべて normal ブレンド) の合成 = shade入力画像
     """
     region_layers = {}
     
@@ -284,13 +293,18 @@ def create_shade_layers(base_image_cv, shade_image_cv, color_regions, luminance_
     
     print(f"[WithShade] Creating shade layers for {len(color_regions)} regions...")
     
+    # 比較用にRGBを一度だけ計算
+    base_rgb_all = cv2.cvtColor(base_image_cv[:, :, :3], cv2.COLOR_BGR2RGB)
+    shade_rgb_all = cv2.cvtColor(shade_image_cv[:, :, :3], cv2.COLOR_BGR2RGB)
+    
     for color_rgb, mask in color_regions.items():
         # この領域のレイヤーを初期化
         base_layer = np.zeros_like(base_image_cv, dtype=np.uint8)
         light_layer = np.zeros_like(base_image_cv, dtype=np.uint8)
         shade_layer = np.zeros_like(base_image_cv, dtype=np.uint8)
         
-        # light/shadeレイヤーのアルファマスクを初期化（実際に書き込まれたピクセルのみを記録）
+        # 各レイヤーのアルファマスク
+        base_alpha_mask  = np.zeros((base_image_cv.shape[0], base_image_cv.shape[1]), dtype=np.uint8)
         light_alpha_mask = np.zeros((base_image_cv.shape[0], base_image_cv.shape[1]), dtype=np.uint8)
         shade_alpha_mask = np.zeros((base_image_cv.shape[0], base_image_cv.shape[1]), dtype=np.uint8)
         
@@ -298,37 +312,35 @@ def create_shade_layers(base_image_cv, shade_image_cv, color_regions, luminance_
         mask = np.clip(mask, 0, 255).astype(np.uint8)
         mask_bool = mask > 0
         
-        # BGRからRGBに変換（比較用）
-        base_rgb = cv2.cvtColor(base_image_cv[:, :, :3], cv2.COLOR_BGR2RGB)
-        shade_rgb = cv2.cvtColor(shade_image_cv[:, :, :3], cv2.COLOR_BGR2RGB)
-        
-        # baseレイヤーは領域全体をbase_colorで塗りつぶす（土台なのでアルファなし）
-        # マスク領域全体にbase_colorを適用
+        # baseレイヤーは領域全体をbase_colorで塗りつぶす（ベタ塗り）
         base_layer[mask_bool] = base_image_cv[mask_bool]
+        base_alpha_mask[mask_bool] = 255  # 領域全体を可視にしておく（後で上からlight/shadeで覆う）
         
-        # マスク内の各ピクセルを処理してlight/shadeを分類
+        # マスク内の各ピクセルを処理してlight/shade/baseを分類
         y_indices, x_indices = np.where(mask_bool)
         
         for y, x in zip(y_indices, x_indices):
-            base_pixel = base_rgb[y, x]
-            shade_pixel = shade_rgb[y, x]
+            base_pixel  = base_rgb_all[y, x]
+            shade_pixel = shade_rgb_all[y, x]
             
             # ピクセルを分類
             pixel_type = classify_pixels_by_luminance(base_pixel, shade_pixel, luminance_threshold)
             
-            if pixel_type == 'light':
-                # lightレイヤーに追加（shade画像から）
+            if pixel_type == 'base':
+                # baseのみ可視: base_layer がすでに base_color で塗られているので何もしない
+                # このピクセルでは light/shade の alpha は 0 のまま
+                continue
+            elif pixel_type == 'light':
+                # lightレイヤーに shade 画像の色をそのまま入れる（alpha=255でベタ）
                 light_layer[y, x] = shade_image_cv[y, x]
-                light_alpha_mask[y, x] = 255  # このピクセルはlightレイヤーに存在
+                light_alpha_mask[y, x] = 255
             elif pixel_type == 'shade':
-                # shadeレイヤーに追加（shade画像から）
+                # shadeレイヤーに shade 画像の色をそのまま入れる（alpha=255でベタ）
                 shade_layer[y, x] = shade_image_cv[y, x]
-                shade_alpha_mask[y, x] = 255  # このピクセルはshadeレイヤーに存在
-            # baseに分類される場合は何もしない（既に全体が塗りつぶされている）
+                shade_alpha_mask[y, x] = 255
         
-        # baseレイヤーは領域全体のマスクをアルファに設定（土台として機能）
-        base_layer[:, :, 3] = mask
-        # light/shadeレイヤーは実際に書き込まれた部分のみアルファを設定
+        # アルファを設定
+        base_layer[:, :, 3]  = base_alpha_mask
         light_layer[:, :, 3] = light_alpha_mask
         shade_layer[:, :, 3] = shade_alpha_mask
         
@@ -345,13 +357,17 @@ def save_psd_with_shade(base_color_cv, shade_cv, line_art_cv, region_layers,
                         output_dir, line_blend_mode):
     """
     シンプルな方式でPSDを保存（フォルダ化なし、LayerFlags不使用）
+
+    本実装では:
+      - base / light / shade をすべて normal ブレンドにすることで、
+        base + light + shade の合成結果が shade 入力画像と一致する
     """
     height, width = base_color_cv.shape[:2]
     
     # PSDファイルを作成
     psd = pytoshop.core.PsdFile(num_channels=3, height=height, width=width)
     
-    # 背景レイヤーを追加
+    # 背景レイヤーを追加（白）
     background = np.ones((height, width, 4), dtype=np.uint8) * 255
     psd = add_psd(psd, background, "Background", enums.BlendMode.normal)
     
@@ -359,14 +375,14 @@ def save_psd_with_shade(base_color_cv, shade_cv, line_art_cv, region_layers,
     for idx, (color_rgb, layers_dict) in enumerate(region_layers.items()):
         region_name = f"R{color_rgb[0]}_G{color_rgb[1]}_B{color_rgb[2]}"
         
-        # base layer
+        # base layer (normal)
         psd = add_psd(psd, layers_dict['base'], f"{region_name}_base", enums.BlendMode.normal)
         
-        # light layer  
+        # light layer (normal)
         psd = add_psd(psd, layers_dict['light'], f"{region_name}_light", enums.BlendMode.normal)
         
-        # shade layer
-        psd = add_psd(psd, layers_dict['shade'], f"{region_name}_shade", enums.BlendMode.multiply)
+        # shade layer (normal) ※ multiply ではなく normal
+        psd = add_psd(psd, layers_dict['shade'], f"{region_name}_shade", enums.BlendMode.normal)
     
     # 線画レイヤーを最上位に追加
     if line_art_cv.shape[2] == 4:
@@ -400,6 +416,10 @@ def save_psd_with_shade(base_color_cv, shade_cv, line_art_cv, region_layers,
 class RGBLineArtDividerWithShade:
     """
     shade画像を追加入力として受け取り、光と影のレイヤーを生成する拡張版
+
+    ・base_layer は base_color のベタ塗り
+    ・light / shade layer を上に乗せることで、
+      base + light + shade の合成結果が shade 入力画像を再現する
     """
     
     def __init__(self):
@@ -411,7 +431,7 @@ class RGBLineArtDividerWithShade:
             "required": {
                 "line_art": ("IMAGE",),
                 "base_color": ("IMAGE",),
-                "shade": ("IMAGE",),  # 新規追加: shade画像
+                "shade": ("IMAGE",),  # shade画像
                 "color_tolerance": ("INT", {
                     "default": 10,
                     "min": 0,
@@ -419,7 +439,7 @@ class RGBLineArtDividerWithShade:
                     "step": 1,
                     "display": "slider"
                 }),
-                "luminance_threshold": ("FLOAT", {  # 新規追加: 輝度差の閾値
+                "luminance_threshold": ("FLOAT", {  # light/shadeの境界調整用
                     "default": 5.0,
                     "min": 0.0,
                     "max": 20.0,
@@ -499,7 +519,7 @@ class RGBLineArtDividerWithShade:
                 luminance_threshold
             )
             
-            # BlendModeの設定
+            # BlendModeの設定（線画用）
             blend_mode_map = {
                 "multiply": enums.BlendMode.multiply,
                 "normal": enums.BlendMode.normal,
@@ -507,7 +527,7 @@ class RGBLineArtDividerWithShade:
                 "overlay": enums.BlendMode.overlay
             }
             
-            # PSDファイルを保存（シンプルな方式）
+            # PSDファイルを保存
             print("[WithShade] Saving PSD file...")
             filename = save_psd_with_shade(
                 base_color_cv,
@@ -529,7 +549,7 @@ class RGBLineArtDividerWithShade:
             except Exception as e:
                 print(f"[WithShade] Warning: Could not write log file: {e}")
             
-            # コンポジット画像を作成（プレビュー用: base_color + shade + line_art）
+            # コンポジット画像を作成（プレビュー用: shade + line_art）
             print("[WithShade] Creating composite image...")
             composite = shade_cv.copy()  # shadeを基準にする
             
