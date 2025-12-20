@@ -8,8 +8,9 @@ import numpy as np
 import os
 from datetime import datetime
 import folder_paths
-from pytoshop.user import nested_layers
-from pytoshop import enums
+from pytoshop import layers
+import pytoshop
+from pytoshop.enums import BlendMode
 
 
 class SimplePSDStackNode:
@@ -78,15 +79,17 @@ class SimplePSDStackNode:
         
         # 最初の画像から情報を取得
         first_image = images_list[0]
-        height = first_image.shape[1]
-        width = first_image.shape[2]
+        # バッチの最初の画像を取得
+        img_sample = first_image[0] if first_image.shape[0] > 0 else first_image
+        height = img_sample.shape[0]
+        width = img_sample.shape[1]
         num_layers = len(images_list)
         
         print(f"Creating PSD with {num_layers} layers, size: {width}x{height}")
         print(f"Layer order: image1 (bottom) → image{num_layers} (top)")
         
-        # レイヤーリストを作成
-        layers_list = []
+        # PSDファイルオブジェクトを作成（既存のld_utilsと同じ方法）
+        psd = pytoshop.core.PsdFile(num_channels=3, height=height, width=width)
         
         # 各画像をレイヤーとして追加（下から上へ）
         # image1 = 一番下のレイヤー（背景）
@@ -101,46 +104,52 @@ class SimplePSDStackNode:
             # チャンネル数を確認
             has_alpha = img_np.shape[2] == 4
             
-            # チャンネルを分離（RGBチャンネルはそのまま使用）
-            if has_alpha:
-                channels = [
-                    img_np[:, :, 0],  # R
-                    img_np[:, :, 1],  # G
-                    img_np[:, :, 2],  # B
-                    img_np[:, :, 3]   # A
-                ]
-            else:
-                channels = [
-                    img_np[:, :, 0],  # R
-                    img_np[:, :, 1],  # G
-                    img_np[:, :, 2]   # B
-                ]
-            
-            # レイヤー名を生成（入力番号を明示）
+            # レイヤー名を生成
             layer_name = f"image{i + 1}"
             
-            # レイヤーを作成
-            layer = nested_layers.Image(
-                name=layer_name,
-                visible=True,
-                opacity=255,
-                group_id=0,
-                blend_mode=enums.BlendMode.normal,
-                top=0,
-                left=0,
-                channels=channels,
-                metadata=None,
-                layer_color=0,
-                color_mode=None
-            )
+            # 各チャンネルのデータを作成（既存のld_utilsと同じ方法）
+            if has_alpha:
+                # RGBA画像の場合
+                layer_alpha = layers.ChannelImageData(image=img_np[:, :, 3], compression=1)
+                layer_r = layers.ChannelImageData(image=img_np[:, :, 0], compression=1)
+                layer_g = layers.ChannelImageData(image=img_np[:, :, 1], compression=1)
+                layer_b = layers.ChannelImageData(image=img_np[:, :, 2], compression=1)
+                
+                # レイヤーレコードを作成
+                new_layer = layers.LayerRecord(
+                    channels={-1: layer_alpha, 0: layer_r, 1: layer_g, 2: layer_b},
+                    top=0,
+                    bottom=height,
+                    left=0,
+                    right=width,
+                    blend_mode=BlendMode.normal,
+                    name=layer_name,
+                    opacity=255
+                )
+            else:
+                # RGB画像の場合（アルファなし）
+                layer_r = layers.ChannelImageData(image=img_np[:, :, 0], compression=1)
+                layer_g = layers.ChannelImageData(image=img_np[:, :, 1], compression=1)
+                layer_b = layers.ChannelImageData(image=img_np[:, :, 2], compression=1)
+                
+                # レイヤーレコードを作成
+                new_layer = layers.LayerRecord(
+                    channels={0: layer_r, 1: layer_g, 2: layer_b},
+                    top=0,
+                    bottom=height,
+                    left=0,
+                    right=width,
+                    blend_mode=BlendMode.normal,
+                    name=layer_name,
+                    opacity=255
+                )
             
-            layers_list.append(layer)
+            # PSDにレイヤーを追加
+            psd.layer_and_mask_info.layer_info.layer_records.append(new_layer)
         
         # PSDファイルを保存
-        # nested_layers_to_psdでPsdFileオブジェクトを生成
-        output = nested_layers.nested_layers_to_psd(layers_list, color_mode=3)  # RGB mode
-        with open(filename, 'wb') as f:
-            output.write(f)
+        with open(filename, 'wb') as fd:
+            psd.write(fd)
         
         # ログファイルにパスを保存（ダウンロードボタン用）
         log_path = os.path.join(output_dir, 'simple_psd_stack_savepath.log')
