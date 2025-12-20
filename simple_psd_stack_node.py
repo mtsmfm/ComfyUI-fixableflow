@@ -21,9 +21,18 @@ class SimplePSDStackNode:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "images": ("IMAGE",),  # 画像のバッチ
+                "image1": ("IMAGE",),  # 1枚目（一番下のレイヤー）
             },
             "optional": {
+                "image2": ("IMAGE",),
+                "image3": ("IMAGE",),
+                "image4": ("IMAGE",),
+                "image5": ("IMAGE",),
+                "image6": ("IMAGE",),
+                "image7": ("IMAGE",),
+                "image8": ("IMAGE",),
+                "image9": ("IMAGE",),
+                "image10": ("IMAGE",),
                 "filename_prefix": ("STRING", {
                     "default": "layered",
                     "multiline": False
@@ -37,17 +46,25 @@ class SimplePSDStackNode:
     CATEGORY = "image/psd"
     OUTPUT_NODE = True
     
-    def create_psd(self, images, filename_prefix="layered"):
+    def create_psd(self, image1, filename_prefix="layered", image2=None, image3=None, 
+                   image4=None, image5=None, image6=None, image7=None, 
+                   image8=None, image9=None, image10=None):
         """
         複数の画像をレイヤーとして重ねたPSDファイルを作成
         
         Args:
-            images: 画像のバッチ (ComfyUI形式: torch.Tensor [B, H, W, C])
+            image1-10: 個別の画像入力（image1は必須、他はオプション）
             filename_prefix: ファイル名のプレフィックス
         
         Returns:
             PSDファイルのパス
         """
+        # 提供された画像を収集
+        images_list = [image1]
+        for img in [image2, image3, image4, image5, image6, image7, image8, image9, image10]:
+            if img is not None:
+                images_list.append(img)
+        
         # 出力ディレクトリの設定
         comfy_path = os.path.dirname(folder_paths.__file__)
         output_dir = os.path.join(comfy_path, 'output')
@@ -59,23 +76,27 @@ class SimplePSDStackNode:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = os.path.join(output_dir, f"{filename_prefix}_{timestamp}.psd")
         
-        # 画像の情報を取得
-        batch_size = images.shape[0]
-        height = images.shape[1]
-        width = images.shape[2]
+        # 最初の画像から情報を取得
+        first_image = images_list[0]
+        height = first_image.shape[1]
+        width = first_image.shape[2]
+        num_layers = len(images_list)
         
-        print(f"Creating PSD with {batch_size} layers, size: {width}x{height}")
-        print(f"Layer order: Index 0 (bottom) → Index {batch_size-1} (top)")
+        print(f"Creating PSD with {num_layers} layers, size: {width}x{height}")
+        print(f"Layer order: image1 (bottom) → image{num_layers} (top)")
         
         # レイヤーリストを作成
         layers_list = []
         
         # 各画像をレイヤーとして追加（下から上へ）
-        # バッチの index 0 = 一番下のレイヤー（背景）
-        # バッチの index N-1 = 一番上のレイヤー（前景）
-        for i in range(batch_size):
+        # image1 = 一番下のレイヤー（背景）
+        # image10 = 一番上のレイヤー（前景）
+        for i, image_tensor in enumerate(images_list):
+            # バッチの最初の画像を取得（各入力は [B, H, W, C] 形式）
+            img = image_tensor[0] if image_tensor.shape[0] > 0 else image_tensor
+            
             # テンソルをNumPy配列に変換（0-255のuint8）
-            img_np = (images[i].cpu().numpy() * 255).astype(np.uint8)
+            img_np = (img.cpu().numpy() * 255).astype(np.uint8)
             
             # チャンネル数を確認
             has_alpha = img_np.shape[2] == 4
@@ -95,8 +116,8 @@ class SimplePSDStackNode:
                     img_np[:, :, 2]   # B
                 ]
             
-            # レイヤー名を生成（下から上への順序を明示）
-            layer_name = f"Layer {i + 1} (Index {i})"
+            # レイヤー名を生成（入力番号を明示）
+            layer_name = f"image{i + 1}"
             
             # レイヤーを作成
             layer = nested_layers.Image(
@@ -133,7 +154,7 @@ class SimplePSDStackNode:
             log_file.write(os.path.basename(filename))
         
         print(f"PSD file saved: {filename}")
-        print(f"Total layers: {batch_size}")
+        print(f"Total layers: {num_layers}")
         print(f"Log file updated: {log_path}")
         
         return (filename,)
