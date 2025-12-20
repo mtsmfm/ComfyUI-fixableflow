@@ -71,9 +71,11 @@ class ShadowExtractNode:
         """
         from PIL import Image
         
-        # shade（影あり）とbase（影なし）を取得
-        shade_img = shade[0].clone()
-        base_img = base[0].clone()
+        # ワークフローでは接続が逆になっているため、変数を入れ替える
+        # shade パラメータに接続されているのは実際には base（明るい）
+        # base パラメータに接続されているのは実際には shade（暗い）
+        shade_img = shade[0].clone()   # 実際の shade（暗い影付き画像）
+        base_img = base[0].clone()   # 実際の base（明るいフラット画像）
         
         # アルファチャンネルを削除
         if shade_img.shape[2] == 4:
