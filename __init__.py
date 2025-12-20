@@ -24,6 +24,9 @@ from .rgb_line_art_divider_with_shade import NODE_CLASS_MAPPINGS as SHADE_MAPPIN
 # Overlay Images ノードをインポート
 from .overlay_images_node import NODE_CLASS_MAPPINGS as OVERLAY_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS as OVERLAY_DISPLAY_MAPPINGS
 
+# Shadow Extract ノードをインポート
+from .shadow_extract_node import NODE_CLASS_MAPPINGS as SHADOW_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS as SHADOW_DISPLAY_MAPPINGS
+
 # ノードマッピングを統合
 NODE_CLASS_MAPPINGS = {
     **RGB_NODE_CLASS_MAPPINGS,  # 新しいRGBノードを優先
@@ -34,7 +37,8 @@ NODE_CLASS_MAPPINGS = {
     **FILL_SPACE_V2_MAPPINGS,  # Fill Space V2ノードを追加
     **MORPHOLOGY_MAPPINGS,  # モルフォロジー演算ノードを追加
     **SHADE_MAPPINGS,  # RGB Line Art Divider with Shade ノードを追加
-    **OVERLAY_MAPPINGS  # Overlay Images ノードを追加
+    **OVERLAY_MAPPINGS,  # Overlay Images ノードを追加
+    **SHADOW_MAPPINGS  # Shadow Extract ノードを追加
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -46,7 +50,8 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     **FILL_SPACE_V2_DISPLAY_MAPPINGS,  # Fill Space V2ノードを追加
     **MORPHOLOGY_DISPLAY_MAPPINGS,  # モルフォロジー演算ノードを追加
     **SHADE_DISPLAY_MAPPINGS,  # RGB Line Art Divider with Shade ノードを追加
-    **OVERLAY_DISPLAY_MAPPINGS  # Overlay Images ノードを追加
+    **OVERLAY_DISPLAY_MAPPINGS,  # Overlay Images ノードを追加
+    **SHADOW_DISPLAY_MAPPINGS  # Shadow Extract ノードを追加
 }
 
 # Web拡張機能の自動読み込みのためのパス設定
