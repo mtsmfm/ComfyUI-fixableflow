@@ -137,15 +137,10 @@ class SimplePSDStackNode:
             layers_list.append(layer)
         
         # PSDファイルを保存
+        # nested_layers_to_psdでPsdFileオブジェクトを生成
+        output = nested_layers.nested_layers_to_psd(layers_list, color_mode=3)  # RGB mode
         with open(filename, 'wb') as f:
-            nested_layers.export(
-                layers_list,
-                f,
-                width=width,
-                height=height,
-                depth=8,
-                color_mode=enums.ColorMode.rgb
-            )
+            output.write(f)
         
         # ログファイルにパスを保存（ダウンロードボタン用）
         log_path = os.path.join(output_dir, 'simple_psd_stack_savepath.log')
