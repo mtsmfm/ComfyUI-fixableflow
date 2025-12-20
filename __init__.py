@@ -1,6 +1,12 @@
 # ComfyUI-fixableflow - Minimal Configuration
 # Only nodes used in the workflow
 
+# Extract Line Art ノードをインポート
+from .extract_lineart_node import NODE_CLASS_MAPPINGS as EXTRACT_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS as EXTRACT_DISPLAY_MAPPINGS
+
+# Morphology Operation ノードをインポート
+from .morphology_node import NODE_CLASS_MAPPINGS as MORPHOLOGY_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS as MORPHOLOGY_DISPLAY_MAPPINGS
+
 # Overlay Images ノードをインポート
 from .overlay_images_node import NODE_CLASS_MAPPINGS as OVERLAY_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS as OVERLAY_DISPLAY_MAPPINGS
 
@@ -12,12 +18,16 @@ from .simple_psd_stack_node import NODE_CLASS_MAPPINGS as PSD_STACK_MAPPINGS, NO
 
 # ノードマッピングを統合
 NODE_CLASS_MAPPINGS = {
-    **OVERLAY_MAPPINGS,      # Overlay Images ノード
-    **SHADOW_MAPPINGS,       # Shadow Extract ノード
-    **PSD_STACK_MAPPINGS     # Simple PSD Stack ノード
+    **EXTRACT_MAPPINGS,          # Extract Line Art ノード
+    **MORPHOLOGY_MAPPINGS,       # Morphology Operation ノード
+    **OVERLAY_MAPPINGS,          # Overlay Images ノード
+    **SHADOW_MAPPINGS,           # Shadow Extract ノード
+    **PSD_STACK_MAPPINGS         # Simple PSD Stack ノード
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
+    **EXTRACT_DISPLAY_MAPPINGS,      # Extract Line Art ノード
+    **MORPHOLOGY_DISPLAY_MAPPINGS,   # Morphology Operation ノード
     **OVERLAY_DISPLAY_MAPPINGS,      # Overlay Images ノード
     **SHADOW_DISPLAY_MAPPINGS,       # Shadow Extract ノード
     **PSD_STACK_DISPLAY_MAPPINGS     # Simple PSD Stack ノード

@@ -6,11 +6,11 @@
 import { app } from "../../scripts/app.js";
 
 app.registerExtension({
-    name: "ComfyUI-fixableflow.SimplePSDStack_v2",
+    name: "ComfyUI-fixableflow.SimplePSDStack",
     
     async nodeCreated(node) {
-        // Only apply to SimplePSDStackNode_v2 nodes  
-        if (node.comfyClass === "SimplePSDStackNode_v2") {
+        // Only apply to SimplePSDStackNode nodes  
+        if (node.comfyClass === "SimplePSDStackNode") {
             console.log("[SimplePSDStack] Setting up download button");
             
             // Add download button

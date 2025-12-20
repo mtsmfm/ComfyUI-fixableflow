@@ -207,9 +207,9 @@ class SimplePSDStackNode:
 
 # ノードマッピング
 NODE_CLASS_MAPPINGS = {
-    "SimplePSDStackNode_v2": SimplePSDStackNode
+    "SimplePSDStackNode": SimplePSDStackNode
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "SimplePSDStackNode_v2": "Simple PSD Stack (3 Layers)"
+    "SimplePSDStackNode": "Simple PSD Stack"
 }
