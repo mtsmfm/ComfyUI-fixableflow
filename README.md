@@ -6,21 +6,32 @@
 ## 環境構築
 
 左上のハンバーガーボタンをクリックしてサイドメニューを開き、Templatesを選択します。
+
+
 <img width="1049" height="608" alt="スクリーンショット 2025-12-21 11 04 30" src="https://github.com/user-attachments/assets/eacfe7e1-fdd9-45a6-904a-de3d99c876b7" />
 
 Templatesの中からComfyUIを選択し、RTX5090をレンタルしてインスタンスを起動します。
 （5090でなくても構いませんが、VRAM32GB以上を推奨します）
 また、コンテナのVolumeサイズは100GB程度確保していくことを推奨します。
+
+
 <img width="1293" height="479" alt="スクリーンショット 2025-12-21 11 19 17" src="https://github.com/user-attachments/assets/c820fc5c-ffc2-4b54-afd4-76e8e374a9f1" />
 <img width="1177" height="443" alt="スクリーンショット 2025-12-21 11 25 16" src="https://github.com/user-attachments/assets/3f01970a-4a0b-4ecc-a5c9-ef951c72938b" />
 
 インスタンスが起動すると「Open」ボタンが表示されるので、ボタンを押してインスタン内部に入ります。
+
+
 <img width="905" height="233" alt="スクリーンショット 2025-12-21 11 27 11" src="https://github.com/user-attachments/assets/019d38f5-d2d0-489a-b99e-a54015133ffc" />
 
 インスタンス内部に入ると以下のような画面が表示されるので、まずはJupyter Terminalを開きます。
+
+
 <img width="1285" height="719" alt="スクリーンショット 2025-12-21 11 39 59" src="https://github.com/user-attachments/assets/d133ea9f-92f0-4601-bf03-6b8ee6e7f217" />
 
+
 Terminalを開いたら、以下のコマンドを入力します。
+
+
 
 ```bash
 cd /workspace/ComfyUI/custom_nodes/
