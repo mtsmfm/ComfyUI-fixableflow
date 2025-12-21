@@ -252,6 +252,18 @@ class MorphologyNode:
         
         return (result_tensor, comparison_tensor)
 
+def create_comparison_image(original, processed):
+    """処理前後の比較画像を作成"""
+    width = original.width
+    height = original.height
+    
+    # 左右に並べた比較画像を作成
+    comparison = Image.new(original.mode, (width * 2, height))
+    comparison.paste(original, (0, 0))
+    comparison.paste(processed, (width, 0))
+    
+    return comparison
+
 # ノードクラスのマッピング
 NODE_CLASS_MAPPINGS = {
     "MorphologyOperation": MorphologyNode,
@@ -259,4 +271,5 @@ NODE_CLASS_MAPPINGS = {
 
 NODE_DISPLAY_NAME_MAPPINGS = {
     "MorphologyOperation": "Morphology Operation",
+
 }
