@@ -3,7 +3,9 @@
 
 
 
-## 環境構築
+## Vast.aiを用いた環境構築
+
+<details>
 
 左上のハンバーガーボタンをクリックしてサイドメニューを開き、Templatesを選択します。
 
@@ -70,7 +72,7 @@ cd /workspace/ComfyUI/models/lora
 wget https://huggingface.co/mattyamonaca/framepack-shade-adder_lora/resolve/main/shade-adder-lora.safetensors
 ```
 
-
+<details>
 
 
 
