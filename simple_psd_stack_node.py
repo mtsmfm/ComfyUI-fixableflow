@@ -38,7 +38,7 @@ class SimplePSDStackNode:
     RETURN_TYPES = ("IMAGE",)
     RETURN_NAMES = ("composite",)
     FUNCTION = "create_psd"
-    CATEGORY = "image/psd"
+    CATEGORY = "FixableFlow"
     OUTPUT_NODE = True
     
     def create_psd(self, base, shade, lineart, filename_prefix="layered"):

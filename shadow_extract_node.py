@@ -53,7 +53,7 @@ class ShadowExtractNode:
     RETURN_TYPES = ("IMAGE",)
     RETURN_NAMES = ("output",)
     FUNCTION = "extract_shadow"
-    CATEGORY = "image/processing"
+    CATEGORY = "FixableFlow"
     
     def extract_shadow(self, shade, base, weight_V=1.0, weight_S=0.5, normalize_factor=40.0):
         """

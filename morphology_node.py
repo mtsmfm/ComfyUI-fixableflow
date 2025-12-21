@@ -223,7 +223,7 @@ class MorphologyNode:
     
     FUNCTION = "execute"
     
-    CATEGORY = "LayerDivider"
+    CATEGORY = "FixableFlow"
     
     def execute(self, image, operation="close", kernel_size=3, iterations=1,
                 kernel_shape="ellipse", binary_threshold=127):
@@ -307,7 +307,7 @@ class AdvancedNoiseRemovalNode:
     
     FUNCTION = "execute"
     
-    CATEGORY = "LayerDivider"
+    CATEGORY = "FixableFlow"
     
     def execute(self, image, min_contour_area=10, close_kernel_size=3,
                 open_kernel_size=3, binary_threshold=127):
@@ -383,7 +383,7 @@ class LineArtCleanupNode:
     
     FUNCTION = "execute"
     
-    CATEGORY = "LayerDivider"
+    CATEGORY = "FixableFlow"
     
     def execute(self, image, cleanup_mode="normal", line_thickness=1,
                 remove_small_dots=True, dot_size_threshold=5, invert=False):
