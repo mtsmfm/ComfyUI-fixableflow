@@ -1,12 +1,11 @@
-# å¿…é ˆãƒ©ã‚¤ãƒ–ãƒ©ãƒª
+# ±Øíš¥é¥¤¥Ö¥é¥ê
 scikit-image
 scikit-learn
 pandas
 opencv-python
 
-# PSDç”Ÿæˆç”¨
-pytoshop
+# Note: pytoshop is no longer needed - PSD generation is now handled by frontend ag-psd
 
-# ä»¥ä¸‹ã®ãƒ©ã‚¤ãƒ–ãƒ©ãƒªã¯ç°¡ç•¥åŒ–ç‰ˆã§ã¯ä¸è¦ã«ãªã‚Šã¾ã—ãŸ
-# segment_anything  # SAMã‚»ã‚°ãƒ¡ãƒ³ãƒ†ãƒ¼ã‚·ãƒ§ãƒ³ç”¨ - å‰Šé™¤
-# onnx              # SAMãƒ¢ãƒ‡ãƒ«ç”¨ - å‰Šé™¤
+# ÒÔÏÂ¤Î¥é¥¤¥Ö¥é¥ê¤Ïº†ÂÔ»¯°æ¤Ç¤Ï²»Òª¤Ë¤Ê¤ê¤Ş¤·¤¿
+# segment_anything  # SAM¥»¥°¥á¥ó¥Æ©`¥·¥ç¥óÓÃ - Ï÷³ı
+# onnx              # SAM¥â¥Ç¥ëÓÃ - Ï÷³ı
