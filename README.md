@@ -108,7 +108,7 @@ wget https://huggingface.co/maybleMyers/framepack_h1111/resolve/main/llava_llama
 cd /workspace/ComfyUI/models/diffusion_models
 wget https://huggingface.co/maybleMyers/framepack_h1111/resolve/main/FramePackI2V_HY_bf16.safetensors
 
-cd /workspace/ComfyUI/models/lora
+cd /workspace/ComfyUI/models/loras
 wget https://huggingface.co/mattyamonaca/framepack-shade-adder_lora/resolve/main/shade-adder-lora.safetensors
 ```
 
